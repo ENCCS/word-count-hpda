@@ -2,6 +2,8 @@ import sys
 import numpy as np
 from wordcount import load_word_counts, load_text, DELIMITERS
 import time
+from mpi4py import MPI
+
 
 def preprocess_text(text):
     """
@@ -43,6 +45,7 @@ def word_autocorr_average(words, text, timesteps=100):
         acf[n, :] = word_autocorr(word, text, timesteps)
     return np.average(acf, axis=0)
 
+
 if __name__ == '__main__':
     # load book text and preprocess it
     book = sys.argv[1]
@@ -53,11 +56,36 @@ if __name__ == '__main__':
     nwords = 10
     word_count = load_word_counts(wc_book)
     top_words = [w[0] for w in word_count[:nwords]]
+
+    # distribute words among MPI tasks
+    rank = MPI.COMM_WORLD.Get_rank()
+    n_ranks = MPI.COMM_WORLD.Get_size()
+    count = nwords // n_ranks
+    remainder = nwords % n_ranks
+    # first 'remainder' ranks get 'count + 1' tasks each
+    if rank < remainder:
+        first = rank * (count + 1)
+        last = first + count + 1
+    # remaining 'nwords - remainder' ranks get 'count' task each
+    else:
+        first = rank * count + remainder
+        last = first + count 
+
+    my_words = top_words[first:last]
+    print(f"My rank number is {rank} and words = {my_words}")
     # number of "timesteps" to use in autocorrelation function
     timesteps = 100
     # compute average autocorrelation and time the execution
     t0 = time.time()
-    acf_ave = word_autocorr_average(top_words, clean_text, timesteps=100)
+    my_acf_ave = word_autocorr_average(my_words, clean_text, timesteps=100)
+
+    receive_message = MPI.COMM_WORLD.gather(my_acf_ave, root=0)
+
+    if rank == 0:
+#        acf_ave = np.average(acf, axis=0)
+        #for i in range(n_ranks):
+        print(receive_message)
+    sys.exit()
     t1 = time.time()        
 
     print(f"serial time: {t1-t0}")
