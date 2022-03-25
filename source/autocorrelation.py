@@ -72,16 +72,12 @@ if __name__ == '__main__':
     t0 = time.time()
     acf_ave = word_autocorr_average(top_words, clean_text, timesteps=100)
     t1 = time.time()        
-#    acf_pool_ave = word_autocorr_average_pool(top_words, clean_text, timesteps=100)
+    acf_pool_ave = word_autocorr_average_pool(top_words, clean_text, timesteps=100)
     t2 = time.time()        
+
+    np.testing.assert_array_equal(acf_ave, acf_pool_ave)
+    
     print(f"serial time: {t1-t0}")
     print(f"parallel map time: {t2-t1}")
 
     np.savetxt(sys.argv[3], np.vstack((np.arange(1,101), acf_ave)).T, delimiter=',')
-    #sys.exit()
-#    np.testing.assert_array_equal(acf_ave, acf_pool_ave)
-#    print(acf_ave-acf_pool_ave)
-    #plt.plot(acf_ave)
-    #plt.plot(acf_pool_ave)
-    #plt.ylim([0.0,0.3])
-    #plt.savefig('tmp.png')
