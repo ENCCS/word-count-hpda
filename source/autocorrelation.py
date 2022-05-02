@@ -2,6 +2,7 @@ import sys
 import numpy as np
 from wordcount import load_word_counts, load_text, DELIMITERS
 import time
+import numba
 
 def preprocess_text(text):
     """
@@ -32,7 +33,50 @@ def word_autocorr(word, text, timesteps):
             acf[t] += mask[i]*mask[i+t]
         acf[t] /= nwords_chosen      
     return acf
-    
+
+@numba.jit(nopython=True, cache=True)
+def word_autocorr_numba(mask, timesteps):
+    """
+    Calculate word-autocorrelation function for given word 
+    in a text. Each word in the text corresponds to one "timestep".
+    """
+    acf = np.zeros((timesteps,))
+    nwords_chosen = np.sum(mask)
+    nwords_total = mask.size
+    for t in range(timesteps):
+        for i in range(1,nwords_total-t):
+            acf[t] += mask[i]*mask[i+t]
+        acf[t] /= nwords_chosen      
+    return acf
+
+@numba.jit(nopython=False, cache=True)
+def word_autocorr_numba_py(word, text, timesteps):
+    """
+    Calculate word-autocorrelation function for given word 
+    in a text. Each word in the text corresponds to one "timestep".
+    """
+    acf = np.zeros((timesteps,))
+    mask = np.array([w==word for w in text]).astype(np.float64)
+
+    nwords_chosen = np.sum(mask)
+    nwords_total = len(text)
+    for t in range(timesteps):
+        for i in range(1,nwords_total-t):
+            acf[t] += mask[i]*mask[i+t]
+        acf[t] /= nwords_chosen      
+    return acf
+
+def word_autocorr_numpy(word, text, timesteps):
+    """
+    Calculate word-autocorrelation function for given word 
+    in a text using numpy.correlate function. 
+    Each word in the text corresponds to one "timestep".
+    """
+    mask = np.array([w==word for w in text]).astype(np.float64)
+    acf = np.correlate(mask, mask, mode='full') / np.sum(mask)
+    return acf[int(acf.size/2):int(acf.size/2)+100]
+
+
 def word_autocorr_average(words, text, timesteps=100):
     """
     Calculate an average word-autocorrelation function 
@@ -42,6 +86,27 @@ def word_autocorr_average(words, text, timesteps=100):
     for n, word in enumerate(words):
         acf[n, :] = word_autocorr(word, text, timesteps)
     return np.average(acf, axis=0)
+
+def word_autocorr_average_numpy(words, text, timesteps=100):
+    """
+    Calculate an average word-autocorrelation function 
+    for a list of words in a text.
+    """
+    acf = np.zeros((len(words), timesteps))
+    for n, word in enumerate(words):
+        acf[n, :] = word_autocorr_numpy(word, text, timesteps)
+    return np.average(acf, axis=0)
+
+def word_autocorr_average_numba_py(words, text, timesteps=100):
+    """
+    Calculate an average word-autocorrelation function 
+    for a list of words in a text.
+    """
+    acf = np.zeros((len(words), timesteps))
+    for n, word in enumerate(words):
+        acf[n, :] = word_autocorr_numba_py(word, text, timesteps)
+    return np.average(acf, axis=0)
+
 
 if __name__ == '__main__':
     # load book text and preprocess it
@@ -55,11 +120,35 @@ if __name__ == '__main__':
     top_words = [w[0] for w in word_count[:nwords]]
     # number of "timesteps" to use in autocorrelation function
     timesteps = 100
+
     # compute average autocorrelation and time the execution
     t0 = time.time()
     acf_ave = word_autocorr_average(top_words, clean_text, timesteps=100)
     t1 = time.time()        
 
-    print(f"serial time: {t1-t0}")
+    # numpy version using np.correlate
+    acf_ave_numpy = word_autocorr_average_numpy(top_words, clean_text, timesteps=100)
+    t2 = time.time()  
+
+    # numba version with nopython=True (needs rewrite of code to "remove" Python)
+    acf_ave_numba = np.zeros((len(top_words), timesteps))
+    for n, word in enumerate(top_words):
+        mask = np.array([w==word for w in clean_text]).astype(np.float64)
+        acf_ave_numba[n, :] = word_autocorr_numba(mask, timesteps)
+    acf_ave_numba = np.average(acf_ave_numba, axis=0)
+    t3 = time.time()
+
+    # numba version with nopython=False
+    acf_ave_numba_py = word_autocorr_average_numba_py(top_words, clean_text, timesteps=100)
+    t4 = time.time()  
+
+    print(f"plain python execution time: {t1-t0}")
+    print(f"numpy execution time: {t2-t1}")
+    print(f"numba (nopython=True) execution time: {t3-t2}")
+    print(f"numba (nopython=False) execution time: {t4-t3}")
+
+    np.testing.assert_approx_equal(np.sum(acf_ave - acf_ave_numpy), 0.0)
+    np.testing.assert_approx_equal(np.sum(acf_ave - acf_ave_numba), 0.0)
+    np.testing.assert_approx_equal(np.sum(acf_ave - acf_ave_numba_py), 0.0)
 
     np.savetxt(sys.argv[3], np.vstack((np.arange(1,101), acf_ave)).T, delimiter=',')
