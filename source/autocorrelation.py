@@ -88,6 +88,16 @@ def ave_word_acf_gather(comm, my_words, text, timesteps=100):
                 acf_tot += results[i][j]
         return acf_tot
 
+def setup(book, wc_book, nwords = 16):
+    # load book text and preprocess it
+    text = load_text(book)
+    clean_text = preprocess_text(text)
+    # load precomputed word counts and select top words
+    word_count = load_word_counts(wc_book)
+    top_words = [w[0] for w in word_count[:nwords]]
+
+    return clean_text, top_words
+
 def mpi_acf(book, wc_book, nwords = 16, timesteps = 100):
     # initialize MPI
     comm = MPI.COMM_WORLD
@@ -95,12 +105,7 @@ def mpi_acf(book, wc_book, nwords = 16, timesteps = 100):
     n_ranks = comm.Get_size()
 
     # load book text and preprocess it
-    text = load_text(book)
-    clean_text = preprocess_text(text)
-    # load precomputed word counts and select top 10 words
-    
-    word_count = load_word_counts(wc_book)
-    top_words = [w[0] for w in word_count[:nwords]]    
+    clean_text, top_words = setup(book, wc_book, nwords)
     
     # distribute words among MPI tasks
     count = nwords // n_ranks
@@ -138,4 +143,4 @@ if __name__ == '__main__':
     if rank == 0:
         nsteps = len(acf)
         output = np.vstack((np.arange(1,nsteps+1), acf)).T
-        np.savetxt(sys.argv[3], output, delimiter=',')
+        np.savetxt(filename, output, delimiter=',')
