@@ -88,7 +88,7 @@ def ave_word_acf_gather(comm, my_words, text, timesteps=100):
                 acf_tot += results[i][j]
         return acf_tot
 
-def mpi_acf(book, wc_book):
+def mpi_acf(book, wc_book, nwords = 16, timesteps = 100):
     # initialize MPI
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -98,12 +98,10 @@ def mpi_acf(book, wc_book):
     text = load_text(book)
     clean_text = preprocess_text(text)
     # load precomputed word counts and select top 10 words
-    nwords = 10
+    
     word_count = load_word_counts(wc_book)
     top_words = [w[0] for w in word_count[:nwords]]    
-    # number of "timesteps" to use in autocorrelation function
-    timesteps = 100
-
+    
     # distribute words among MPI tasks
     count = nwords // n_ranks
     remainder = nwords % n_ranks
@@ -134,8 +132,10 @@ if __name__ == '__main__':
     book = sys.argv[1]
     wc_book = sys.argv[2]
     filename = sys.argv[3]    
+    acf = mpi_acf(book, wc_book, 16, 100)
 
-    acf = mpi_acf(book, wc_book)
-    nsteps = len(acf)
-    output = np.vstack((np.arange(1,nsteps+1), acf)).T
-    np.savetxt(sys.argv[3], output, delimiter=',')
+    rank = MPI.COMM_WORLD.Get_rank()
+    if rank == 0:
+        nsteps = len(acf)
+        output = np.vstack((np.arange(1,nsteps+1), acf)).T
+        np.savetxt(sys.argv[3], output, delimiter=',')
