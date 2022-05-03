@@ -20,7 +20,7 @@ def preprocess_text(text):
             clean_text.append(word)
     return clean_text
 
-def word_autocorr(word, text, timesteps):
+def word_acf(word, text, timesteps):
     """
     Calculate word-autocorrelation function for given word 
     in a text. Each word in the text corresponds to one "timestep".
@@ -35,21 +35,48 @@ def word_autocorr(word, text, timesteps):
         acf[t] /= nwords_chosen      
     return acf
     
-def word_autocorr_average(words, text, timesteps=100):
+def ave_word_acf(words, text, timesteps=100):
     """
     Calculate an average word-autocorrelation function 
     for a list of words in a text.
     """
     acf = np.zeros((len(words), timesteps))
     for n, word in enumerate(words):
-        acf[n, :] = word_autocorr(word, text, timesteps)
+        acf[n, :] = word_acf(word, text, timesteps)
     return np.average(acf, axis=0)
 
-def word_count_average_mpi_collective(my_words, text, rank, n_ranks, timesteps=100):
+def ave_word_acf_p2p(comm, my_words, text, timesteps=100):
+    rank = comm.Get_rank()
+    n_ranks = comm.Get_size()
     # each rank computes its own set of acfs
     my_acfs = np.zeros((len(my_words), timesteps))
     for i, word in enumerate(my_words):
-        my_acfs[i,:] = word_autocorr(word, text, timesteps)
+        my_acfs[i,:] = word_acf(word, text, timesteps)
+
+    if rank == 0:
+        results = []
+        # append own results
+        results.append(my_acfs)
+        # receive data from other ranks and append to results
+        for sender in range(1, n_ranks):
+            results.append(comm.recv(source=sender, tag=12))
+        # compute total 
+        acf_tot = np.zeros((timesteps,))
+        for i in range(n_ranks):
+            for j in range(len(results[i])):
+                acf_tot += results[i][j]
+        return acf_tot
+    else:
+        # send data
+        comm.send(my_acfs, dest=0, tag=12)
+
+def ave_word_acf_gather(comm, my_words, text, timesteps=100):
+    rank = comm.Get_rank()
+    n_ranks = comm.Get_size() 
+    # each rank computes its own set of acfs
+    my_acfs = np.zeros((len(my_words), timesteps))
+    for i, word in enumerate(my_words):
+        my_acfs[i,:] = word_acf(word, text, timesteps)
 
     # gather results on rank 0
     results = comm.gather(my_acfs, root=0)
@@ -59,52 +86,23 @@ def word_count_average_mpi_collective(my_words, text, rank, n_ranks, timesteps=1
         for i in range(n_ranks):
             for j in range(len(results[i])):
                 acf_tot += results[i][j]
-        # compute average and write to file
-        acf_ave = acf_tot / nwords
-        return acf_ave
+        return acf_tot
 
-def word_count_average_mpi_p2p(my_words, text, rank, n_ranks, timesteps=100):
-    # each rank computes its own set of acfs
-    my_acfs = np.zeros((len(my_words), timesteps))
-    for i, word in enumerate(my_words):
-        my_acfs[i,:] = word_autocorr(word, text, timesteps)
-
-    if rank == 0:
-        results = []
-        # append own results
-        results.append(my_acfs)
-        # receive data from other ranks and append to results
-        for sender in range(1, n_ranks):
-            results.append(comm.recv(source=sender, tag=12))
-        # compute average and write to file
-        acf_tot = np.zeros((timesteps,))
-        for i in range(n_ranks):
-            for j in range(len(results[i])):
-                acf_tot += results[i][j]
-        acf_ave = acf_tot / nwords
-        return acf_ave
-    else:
-        # send data
-        comm.send(my_acfs, dest=0, tag=12)
-
-
-if __name__ == '__main__':
-    # load book text and preprocess it
-    book = sys.argv[1]
-    text = load_text(book)
-    clean_text = preprocess_text(text)
-    # load precomputed word counts and select top 10 words
-    wc_book = sys.argv[2]
-    nwords = 10
-    word_count = load_word_counts(wc_book)
-    top_words = [w[0] for w in word_count[:nwords]]
-    # number of "timesteps" to use in autocorrelation function
-    timesteps = 100
-
+def mpi_acf(book, wc_book):
     # initialize MPI
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     n_ranks = comm.Get_size()
+
+    # load book text and preprocess it
+    text = load_text(book)
+    clean_text = preprocess_text(text)
+    # load precomputed word counts and select top 10 words
+    nwords = 10
+    word_count = load_word_counts(wc_book)
+    top_words = [w[0] for w in word_count[:nwords]]    
+    # number of "timesteps" to use in autocorrelation function
+    timesteps = 100
 
     # distribute words among MPI tasks
     count = nwords // n_ranks
@@ -122,14 +120,22 @@ if __name__ == '__main__':
     print(f"My rank number is {rank} and first, last = {first}, {last}")
 
     # use collective function
-    #acf_ave = word_count_average_mpi_collective(my_words, clean_text, rank, n_ranks, timesteps=100)
+    acf_tot = ave_word_acf_gather(comm, my_words, clean_text, timesteps)
 
     # use p2p function
-    acf_ave = word_count_average_mpi_p2p(my_words, clean_text, rank, n_ranks, timesteps=100)
+    #acf_tot = ave_word_acf_p2p(comm, my_words, clean_text, timesteps)
 
     # only rank 0 has the averaged data
     if rank == 0:
-        np.savetxt(sys.argv[3], np.vstack((np.arange(1,101), acf_ave)).T, delimiter=',')
+        return acf_tot / nwords
 
+if __name__ == '__main__':
+    # load book text and preprocess it
+    book = sys.argv[1]
+    wc_book = sys.argv[2]
+    filename = sys.argv[3]    
 
-
+    acf = mpi_acf(book, wc_book)
+    nsteps = len(acf)
+    output = np.vstack((np.arange(1,nsteps+1), acf)).T
+    np.savetxt(sys.argv[3], output, delimiter=',')
