@@ -4,7 +4,9 @@ DATA = glob_wildcards('data/{book}.txt').book
 # the default rule
 rule all:
     input:
-        'results/results.txt'
+        'results/results.txt', expand('results/acf_{book}.dat', book=DATA)
+#        'results/results.txt'
+
 
 # count words in one of our books
 # logfiles from each run are put in .log files"
@@ -19,13 +21,19 @@ rule count_words:
             python {input.wc} {input.book} {output} >> {log} 2>&1
         '''
 
-# create a plot for each book
-rule make_plot:
-   input:
-       plotcount='source/plotcount.py',
-       book='processed_data/{file}.dat'
-   output: 'results/{file}.png'
-   shell: 'python {input.plotcount} {input.book} {output}'
+rule word_acf:
+    input:
+        acf='source/autocorrelation.py',
+        book='data/{file}.txt',
+        wcdata='processed_data/{file}.dat'
+    output: 'results/acf_{file}.dat'
+    threads: 4
+    log: 'processed_data/acf_{file}.log'    
+    shell:
+        '''
+            python {input.acf} {input.book} {input.wcdata} {output} >> {log} 2>&1
+        '''
+
 
 # generate results table
 rule zipf_test:
