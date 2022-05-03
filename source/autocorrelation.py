@@ -34,7 +34,17 @@ def word_acf(word, text, timesteps):
             acf[t] += mask[i]*mask[i+t]
         acf[t] /= nwords_chosen      
     return acf
-    
+
+def word_acf_numpy(word, text, timesteps):
+    """
+    Calculate word-autocorrelation function for given word 
+    in a text using numpy.correlate function. 
+    Each word in the text corresponds to one "timestep".
+    """
+    mask = np.array([w==word for w in text]).astype(np.float64)
+    acf = np.correlate(mask, mask, mode='full') / np.sum(mask)
+    return acf[int(acf.size/2):int(acf.size/2)+100]
+
 def ave_word_acf(words, text, timesteps=100):
     """
     Calculate an average word-autocorrelation function 
