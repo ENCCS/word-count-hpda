@@ -74,7 +74,7 @@ def word_acf_numpy(word, text, timesteps):
     """
     mask = np.array([w==word for w in text]).astype(np.float64)
     acf = np.correlate(mask, mask, mode='full') / np.sum(mask)
-    return acf[int(acf.size/2):int(acf.size/2)+100]
+    return acf[int(acf.size/2):int(acf.size/2)+timesteps]
 
 
 def ave_word_acf(words, text, timesteps=100):
