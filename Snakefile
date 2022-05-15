@@ -5,8 +5,6 @@ DATA = glob_wildcards('data/{book}.txt').book
 rule all:
     input:
         'results/results.txt', expand('results/acf_{book}.dat', book=DATA)
-#        'results/results.txt'
-
 
 # count words in one of our books
 # logfiles from each run are put in .log files"
