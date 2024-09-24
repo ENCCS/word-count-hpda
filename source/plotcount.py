@@ -30,12 +30,13 @@ def main(data_file, plot_file, nb_words):
     # read data from input_file
     x_values = []
     y_values = []
-    for index, line in enumerate(open(data_file, "r").readlines()):
-        word, count, _percent = line.split()
-        x_values.append(word)
-        y_values.append(int(count))
-        if (index + 1) == nb_words:
-            break
+    with open(data_file) as data:
+        for index, line in enumerate(data.readlines()):
+            word, count, _percent = line.split()
+            x_values.append(word)
+            y_values.append(int(count))
+            if (index + 1) == nb_words:
+                break
 
     # now plot the data
     plot_bar_chart(x_values, y_values, f"{nb_words} most common words", plot_file)
