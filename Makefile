@@ -25,7 +25,7 @@ $(RESDIR)/%.png: $(TMPDIR)/%.dat source/plotcount.py
 	python source/plotcount.py $< $@
 
 $(RESDIR)/results.txt: $(DATA) source/zipf_test.py
-	python source/zipf_test.py $(DATA) > $@
+	python source/zipf_test.py 10 $(DATA) > $@
 
 clean:
 	@$(RM) $(TMPDIR)/*
